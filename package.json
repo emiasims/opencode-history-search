@@ -1,6 +1,6 @@
 {
   "name": "opencode-history-search",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Search through OpenCode conversation history with keyword, regex, and fuzzy search support",
   "main": "dist/history-search.ts",
   "module": "src/index.ts",
