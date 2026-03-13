@@ -1,5 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { getCurrentProjectID } from "./storage";
+import { getCurrentProjectID } from "./storage-provider";
 import { searchKeyword, type SearchMatch } from "./search/keyword";
 import { searchFuzzy } from "./search/fuzzy";
 import { parseDateFilter, filterByDate } from "./search/date-filter";
@@ -74,6 +74,12 @@ Supports keyword search, regex patterns, fuzzy search (for typos and variations)
       .number()
       .optional()
       .describe("Maximum number of results (default: 50)"),
+    role: tool.schema
+      .enum(["user", "assistant"])
+      .optional()
+      .describe(
+        "Filter by message role: 'user' for your messages only, 'assistant' for AI responses only",
+      ),
   },
 
   async execute(args) {
@@ -84,11 +90,13 @@ Supports keyword search, regex patterns, fuzzy search (for typos and variations)
         ? await searchFuzzy(projectID, args.query, {
             threshold: args.fuzzyThreshold,
             limit: args.limit,
+            role: args.role,
           })
         : await searchKeyword(projectID, args.query, {
             regex: args.regex,
             caseSensitive: args.caseSensitive,
             limit: args.limit,
+            role: args.role,
           });
 
     if (args.date) {

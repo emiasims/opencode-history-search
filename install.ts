@@ -11,22 +11,29 @@ Searches:
 - Message content (user and assistant messages)
 - Tool invocations (grep, edit, bash, read, etc.)
 - File paths mentioned or edited
+- Files modified in patch parts (find which sessions changed a file)
 
 Features:
 - Keyword search (exact matches)
 - Regex search (advanced patterns)
 - Fuzzy search (typo-tolerant matching)
+- Date filtering (today, last 7 days, date ranges)
+- Role filtering (search only your messages or AI responses)
+- File modification tracking (find which sessions edited a file)
 - Case-sensitive option
 - Configurable result limit (default: 50)
 - Fuzzy threshold control (strictness)
 - Results sorted by most recent first
+- Works with OpenCode v1.2+ (SQLite) and v1.1.x (JSON files)
 
 Examples:
 - "Search my history for 'ripgrep'"
 - "Search history for 'storage.*\\.ts' with regex"
 - "Search history for 'storag' using fuzzy mode" (finds "storage")
 - "Find conversations about authentication"
-- "Search for 'grap' with fuzzy search" (finds "grep")`;
+- "Search for 'grap' with fuzzy search" (finds "grep")
+- "Search only my messages for 'storage'" (role: user)
+- "Which sessions modified src/storage.ts?" (file modification search)`;
 
 function getOpenCodeToolDir(): string {
   const home = homedir();
