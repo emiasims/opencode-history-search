@@ -9,7 +9,7 @@ import {
 
 describe("fuzzy search (unit tests with mocks)", () => {
   beforeAll(() => {
-    mock.module("../storage", () => ({
+    mock.module("../storage-provider", () => ({
       listSessions: mockListSessions,
       listMessages: mockListMessages,
       listParts: mockListParts,

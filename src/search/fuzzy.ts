@@ -1,6 +1,6 @@
 import Fuse from "fuse.js";
-import type { Session, Message, Part } from "../storage";
-import { listSessions, listMessages, listParts } from "../storage";
+import type { Session, Message, Part } from "../storage-provider";
+import { listSessions, listMessages, listParts } from "../storage-provider";
 import type { SearchMatch } from "./keyword";
 
 interface SearchableItem {
@@ -18,6 +18,7 @@ export async function searchFuzzy(
   options: {
     threshold?: number; // 0.0 = exact, 1.0 = anything (default: 0.4)
     limit?: number;
+    role?: "user" | "assistant";
   } = {},
 ): Promise<SearchMatch[]> {
   const threshold = options.threshold ?? 0.4;
@@ -38,7 +39,7 @@ export async function searchFuzzy(
 
       // Index messages
       try {
-        for await (const message of listMessages(session.id)) {
+        for await (const message of listMessages(session.id, options.role)) {
           try {
             for await (const part of listParts(message.id)) {
               if (part.type === "text" && part.text) {
@@ -82,6 +83,20 @@ export async function searchFuzzy(
                       timestamp: message.time.created,
                     });
                   }
+                }
+              }
+
+              // Index file paths from patch parts
+              if (part.type === "patch" && part.files) {
+                for (const filePath of part.files) {
+                  items.push({
+                    session,
+                    content: filePath,
+                    type: "filepath",
+                    messageID: message.id,
+                    partID: part.id,
+                    timestamp: message.time.created,
+                  });
                 }
               }
             }

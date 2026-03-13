@@ -22,7 +22,7 @@ export interface Part {
   id: string;
   messageID: string;
   sessionID: string;
-  type: "text" | "tool" | "file";
+  type: "text" | "tool" | "file" | "patch";
   text?: string;
   tool?: string;
   state?: {
@@ -30,6 +30,7 @@ export interface Part {
     output?: string;
     title?: string;
   };
+  files?: string[]; // For patch parts — list of modified file paths
 }
 
 export async function getStorageDir(): Promise<string> {
@@ -70,6 +71,7 @@ export async function* listSessions(
 
 export async function* listMessages(
   sessionID: string,
+  role?: "user" | "assistant",
 ): AsyncGenerator<Message> {
   const storageDir = await getStorageDir();
   const messageDir = path.join(storageDir, "message", sessionID.trim());
@@ -78,6 +80,7 @@ export async function* listMessages(
     for await (const file of new Glob("*.json").scan({ cwd: messageDir })) {
       try {
         const content = await Bun.file(path.join(messageDir, file)).json();
+        if (role && content.role !== role) continue;
         yield content as Message;
       } catch {
         continue;

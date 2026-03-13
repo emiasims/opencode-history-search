@@ -188,6 +188,30 @@ You: Search for "Storage" case-sensitively
 
 This will only match "Storage" (capitalized), not "storage" or "STORAGE".
 
+### Role Filtering
+
+```
+You: Search my messages (not AI responses) for "storage"
+```
+
+This finds only messages _you_ sent that contain "storage".
+
+```
+You: Search only AI responses for "storage" using role filter "assistant"
+```
+
+### File Modification Search
+
+```
+You: Which sessions modified src/storage.ts?
+```
+
+This searches `patch` parts to find every session where that file was modified.
+
+```
+You: Find all sessions that changed files in src/utils/
+```
+
 ### Limit Results
 
 ```
@@ -212,14 +236,22 @@ You: Look through my history for discussions about testing
 
 ### Storage Location
 
-OpenCode stores conversation history in:
+The tool auto-detects which OpenCode storage format you have:
 
+**OpenCode v1.2+ (SQLite):**
+```
+~/.local/share/opencode/opencode.db
+```
+
+**OpenCode v1.1.x (JSON files):**
 ```
 ~/.local/share/opencode/storage/
 ├── session/{projectID}/ses_*.json   # Session metadata
 ├── message/{sessionID}/msg_*.json   # Messages
 └── part/{messageID}/part_*.json     # Message parts
 ```
+
+SQLite is used automatically when `opencode.db` is present; otherwise it falls back to JSON files.
 
 ### Project Scoping
 
@@ -242,14 +274,16 @@ The tool searches across:
 
 When the AI uses the tool, it can specify:
 
-| Parameter        | Description      | Default     | Example     |
-| ---------------- | ---------------- | ----------- | ----------- |
-| `query`          | Search term      | _required_  | `"storage"` |
-| `mode`           | Search mode      | `"keyword"` | `"fuzzy"`   |
-| `regex`          | Use regex        | `false`     | `true`      |
-| `caseSensitive`  | Case sensitive   | `false`     | `true`      |
-| `fuzzyThreshold` | Fuzzy strictness | `0.4`       | `0.3`       |
-| `limit`          | Max results      | `50`        | `10`        |
+| Parameter        | Description      | Default     | Example          |
+| ---------------- | ---------------- | ----------- | ---------------- |
+| `query`          | Search term      | _required_  | `"storage"`      |
+| `mode`           | Search mode      | `"keyword"` | `"fuzzy"`        |
+| `regex`          | Use regex        | `false`     | `true`           |
+| `caseSensitive`  | Case sensitive   | `false`     | `true`           |
+| `fuzzyThreshold` | Fuzzy strictness | `0.4`       | `0.3`            |
+| `date`           | Date filter      | _none_      | `"last 7 days"`  |
+| `limit`          | Max results      | `50`        | `10`             |
+| `role`           | Message role     | _none_      | `"user"`         |
 
 ## Common Use Cases
 

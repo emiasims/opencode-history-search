@@ -9,7 +9,7 @@ import {
 
 describe("keyword search (unit tests with mocks)", () => {
   beforeAll(() => {
-    mock.module("../storage", () => ({
+    mock.module("../storage-provider", () => ({
       listSessions: mockListSessions,
       listMessages: mockListMessages,
       listParts: mockListParts,
@@ -81,5 +81,14 @@ describe("keyword search (unit tests with mocks)", () => {
     );
 
     expect(results.length).toBe(0); // Should find 0 since mock has lowercase "storage";
+  });
+
+  test("finds file paths in patch parts", async () => {
+    const results = await searchKeyword(MOCK_PROJECT_ID, "helpers.ts", {
+      limit: 5,
+    });
+    const fpMatch = results.find((r) => r.matchType === "filepath");
+    expect(fpMatch).toBeDefined();
+    expect(fpMatch?.excerpt).toContain("helpers.ts");
   });
 });

@@ -93,6 +93,13 @@ export const mockParts: Record<string, Part[]> = {
         title: "Create storage module",
       },
     },
+    {
+      id: "part_006",
+      messageID: "msg_002",
+      sessionID: "ses_001",
+      type: "patch",
+      files: ["src/storage.ts", "src/utils/helpers.ts"],
+    },
   ],
   msg_003: [
     {

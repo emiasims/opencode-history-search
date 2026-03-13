@@ -2,13 +2,104 @@
 // src/index.ts
 import { tool } from "@opencode-ai/plugin";
 
-// src/storage.ts
+// src/storage-sqlite.ts
+import { Database } from "bun:sqlite";
 import path from "path";
 import os from "os";
+function getDbPath() {
+  const xdgData = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  return path.join(xdgData, "opencode", "opencode.db");
+}
+function dbExists() {
+  try {
+    return Bun.file(getDbPath()).size > 0;
+  } catch {
+    return false;
+  }
+}
+function openDb() {
+  return new Database(getDbPath(), { readonly: true });
+}
+async function* listSessionsSqlite(projectID) {
+  const db = openDb();
+  try {
+    const rows = db.query(`SELECT id, project_id, title, directory, time_created, time_updated
+         FROM session WHERE project_id = ?
+         ORDER BY time_updated DESC`).all(projectID);
+    for (const row of rows) {
+      yield {
+        id: row.id,
+        projectID: row.project_id,
+        title: row.title,
+        directory: row.directory,
+        time: { created: row.time_created, updated: row.time_updated }
+      };
+    }
+  } finally {
+    db.close();
+  }
+}
+async function* listMessagesSqlite(sessionID, role) {
+  const db = openDb();
+  try {
+    const rows = db.query(`SELECT id, session_id, time_created, data
+         FROM message WHERE session_id = ?
+         ORDER BY time_created ASC`).all(sessionID);
+    for (const row of rows) {
+      const data = JSON.parse(row.data);
+      if (role && data.role !== role)
+        continue;
+      yield {
+        id: row.id,
+        sessionID: row.session_id,
+        role: data.role,
+        agent: data.agent || "",
+        time: { created: row.time_created }
+      };
+    }
+  } finally {
+    db.close();
+  }
+}
+async function* listPartsSqlite(messageID) {
+  const db = openDb();
+  try {
+    const rows = db.query(`SELECT id, message_id, session_id, data
+         FROM part WHERE message_id = ?
+         ORDER BY time_created ASC`).all(messageID);
+    for (const row of rows) {
+      const data = JSON.parse(row.data);
+      const type = data.type === "text" ? "text" : data.type === "tool" ? "tool" : data.type === "file" ? "file" : data.type === "patch" ? "patch" : null;
+      if (!type)
+        continue;
+      const part = {
+        id: row.id,
+        messageID: row.message_id,
+        sessionID: row.session_id,
+        type
+      };
+      if (type === "text") {
+        part.text = data.text;
+      } else if (type === "tool") {
+        part.tool = data.tool;
+        part.state = data.state;
+      } else if (type === "patch") {
+        part.files = data.files;
+      }
+      yield part;
+    }
+  } finally {
+    db.close();
+  }
+}
+
+// src/storage.ts
+import path2 from "path";
+import os2 from "os";
 var {Glob } = globalThis.Bun;
 async function getStorageDir() {
-  const xdgData = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-  return path.join(xdgData, "opencode", "storage");
+  const xdgData = process.env.XDG_DATA_HOME || path2.join(os2.homedir(), ".local", "share");
+  return path2.join(xdgData, "opencode", "storage");
 }
 async function getCurrentProjectID() {
   const proc = Bun.spawn(["git", "rev-list", "--max-parents=0", "--all"], {
@@ -22,11 +113,11 @@ async function getCurrentProjectID() {
 }
 async function* listSessions(projectID) {
   const storageDir = await getStorageDir();
-  const sessionDir = path.join(storageDir, "session", projectID);
+  const sessionDir = path2.join(storageDir, "session", projectID);
   try {
     for await (const file of new Glob("*.json").scan({ cwd: sessionDir })) {
       try {
-        const content = await Bun.file(path.join(sessionDir, file)).json();
+        const content = await Bun.file(path2.join(sessionDir, file)).json();
         yield content;
       } catch {
         continue;
@@ -36,13 +127,15 @@ async function* listSessions(projectID) {
     return;
   }
 }
-async function* listMessages(sessionID) {
+async function* listMessages(sessionID, role) {
   const storageDir = await getStorageDir();
-  const messageDir = path.join(storageDir, "message", sessionID.trim());
+  const messageDir = path2.join(storageDir, "message", sessionID.trim());
   try {
     for await (const file of new Glob("*.json").scan({ cwd: messageDir })) {
       try {
-        const content = await Bun.file(path.join(messageDir, file)).json();
+        const content = await Bun.file(path2.join(messageDir, file)).json();
+        if (role && content.role !== role)
+          continue;
         yield content;
       } catch {
         continue;
@@ -54,11 +147,11 @@ async function* listMessages(sessionID) {
 }
 async function* listParts(messageID) {
   const storageDir = await getStorageDir();
-  const partDir = path.join(storageDir, "part", messageID.trim());
+  const partDir = path2.join(storageDir, "part", messageID.trim());
   try {
     for await (const file of new Glob("*.json").scan({ cwd: partDir })) {
       try {
-        const content = await Bun.file(path.join(partDir, file)).json();
+        const content = await Bun.file(path2.join(partDir, file)).json();
         yield content;
       } catch {
         continue;
@@ -69,12 +162,36 @@ async function* listParts(messageID) {
   }
 }
 
+// src/storage-provider.ts
+var useSqlite = dbExists();
+async function* listSessions2(projectID) {
+  if (useSqlite) {
+    yield* listSessionsSqlite(projectID);
+  } else {
+    yield* listSessions(projectID);
+  }
+}
+async function* listMessages2(sessionID, role) {
+  if (useSqlite) {
+    yield* listMessagesSqlite(sessionID, role);
+  } else {
+    yield* listMessages(sessionID, role);
+  }
+}
+async function* listParts2(messageID) {
+  if (useSqlite) {
+    yield* listPartsSqlite(messageID);
+  } else {
+    yield* listParts(messageID);
+  }
+}
+
 // src/search/keyword.ts
 async function searchKeyword(projectID, query, options = {}) {
   const results = [];
   const pattern = options.regex ? new RegExp(query, options.caseSensitive ? "" : "i") : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), options.caseSensitive ? "" : "i");
   const limit = options.limit || 50;
-  for await (const session of listSessions(projectID)) {
+  for await (const session of listSessions2(projectID)) {
     if (results.length >= limit)
       break;
     if (pattern.test(session.title)) {
@@ -89,10 +206,10 @@ async function searchKeyword(projectID, query, options = {}) {
       if (results.length >= limit)
         break;
     }
-    for await (const message of listMessages(session.id)) {
+    for await (const message of listMessages2(session.id, options.role)) {
       if (results.length >= limit)
         break;
-      for await (const part of listParts(message.id)) {
+      for await (const part of listParts2(message.id)) {
         if (results.length >= limit)
           break;
         if (part.type === "text" && part.text && pattern.test(part.text)) {
@@ -150,6 +267,24 @@ async function searchKeyword(projectID, query, options = {}) {
               });
               if (results.length >= limit)
                 break;
+            }
+          }
+        }
+        if (results.length < limit && part.type === "patch" && part.files) {
+          for (const filePath of part.files) {
+            if (results.length >= limit)
+              break;
+            if (pattern.test(filePath)) {
+              results.push({
+                sessionID: session.id,
+                sessionTitle: session.title,
+                timestamp: message.time.created,
+                matchType: "filepath",
+                excerpt: filePath,
+                context: `Modified file: ${filePath}`,
+                messageID: message.id,
+                partID: part.id
+              });
             }
           }
         }
@@ -231,14 +366,14 @@ class KeyStore {
   }
 }
 function createKey(key) {
-  let path2 = null;
+  let path3 = null;
   let id = null;
   let src = null;
   let weight = 1;
   let getFn = null;
   if (isString(key) || isArray(key)) {
     src = key;
-    path2 = createKeyPath(key);
+    path3 = createKeyPath(key);
     id = createKeyId(key);
   } else {
     if (!hasOwn.call(key, "name")) {
@@ -252,11 +387,11 @@ function createKey(key) {
         throw new Error(INVALID_KEY_WEIGHT_VALUE(name));
       }
     }
-    path2 = createKeyPath(name);
+    path3 = createKeyPath(name);
     id = createKeyId(name);
     getFn = key.getFn;
   }
-  return { path: path2, id, weight, src, getFn };
+  return { path: path3, id, weight, src, getFn };
 }
 function createKeyPath(key) {
   return isArray(key) ? key : key.split(".");
@@ -264,34 +399,34 @@ function createKeyPath(key) {
 function createKeyId(key) {
   return isArray(key) ? key.join(".") : key;
 }
-function get(obj, path2) {
+function get(obj, path3) {
   let list = [];
   let arr = false;
-  const deepGet = (obj2, path3, index) => {
+  const deepGet = (obj2, path4, index) => {
     if (!isDefined(obj2)) {
       return;
     }
-    if (!path3[index]) {
+    if (!path4[index]) {
       list.push(obj2);
     } else {
-      let key = path3[index];
+      let key = path4[index];
       const value = obj2[key];
       if (!isDefined(value)) {
         return;
       }
-      if (index === path3.length - 1 && (isString(value) || isNumber(value) || isBoolean(value))) {
+      if (index === path4.length - 1 && (isString(value) || isNumber(value) || isBoolean(value))) {
         list.push(toString(value));
       } else if (isArray(value)) {
         arr = true;
         for (let i = 0, len = value.length;i < len; i += 1) {
-          deepGet(value[i], path3, index + 1);
+          deepGet(value[i], path4, index + 1);
         }
-      } else if (path3.length) {
-        deepGet(value, path3, index + 1);
+      } else if (path4.length) {
+        deepGet(value, path4, index + 1);
       }
     }
   };
-  deepGet(obj, isString(path2) ? path2.split(".") : path2, 0);
+  deepGet(obj, isString(path3) ? path3.split(".") : path3, 0);
   return arr ? list : list[0];
 }
 var MatchOptions = {
@@ -1459,7 +1594,7 @@ async function searchFuzzy(projectID, query, options = {}) {
   const limit = options.limit ?? 50;
   const items = [];
   try {
-    for await (const session of listSessions(projectID)) {
+    for await (const session of listSessions2(projectID)) {
       items.push({
         session,
         content: session.title,
@@ -1467,9 +1602,9 @@ async function searchFuzzy(projectID, query, options = {}) {
         timestamp: session.time.updated
       });
       try {
-        for await (const message of listMessages(session.id)) {
+        for await (const message of listMessages2(session.id, options.role)) {
           try {
-            for await (const part of listParts(message.id)) {
+            for await (const part of listParts2(message.id)) {
               if (part.type === "text" && part.text) {
                 items.push({
                   session,
@@ -1496,16 +1631,28 @@ async function searchFuzzy(projectID, query, options = {}) {
                 const combined = inputStr + " " + outputStr;
                 const pathMatches = combined.match(/(?:\/[^/\s]+)+/g);
                 if (pathMatches) {
-                  for (const path2 of pathMatches) {
+                  for (const path3 of pathMatches) {
                     items.push({
                       session,
-                      content: path2,
+                      content: path3,
                       type: "filepath",
                       messageID: message.id,
                       partID: part.id,
                       timestamp: message.time.created
                     });
                   }
+                }
+              }
+              if (part.type === "patch" && part.files) {
+                for (const filePath of part.files) {
+                  items.push({
+                    session,
+                    content: filePath,
+                    type: "filepath",
+                    messageID: message.id,
+                    partID: part.id,
+                    timestamp: message.time.created
+                  });
                 }
               }
             }
@@ -1665,17 +1812,20 @@ Supports keyword search, regex patterns, fuzzy search (for typos and variations)
     caseSensitive: tool.schema.boolean().optional().describe("Case-sensitive search (keyword mode only, default: false)"),
     fuzzyThreshold: tool.schema.number().optional().describe("Fuzzy match threshold 0.0-1.0 (fuzzy mode only, default: 0.4, lower = stricter)"),
     date: tool.schema.string().optional().describe("Filter by date: 'today', 'yesterday', 'last N days/weeks/months', 'YYYY-MM-DD', 'YYYY-MM', 'YYYY-MM-DD to YYYY-MM-DD'"),
-    limit: tool.schema.number().optional().describe("Maximum number of results (default: 50)")
+    limit: tool.schema.number().optional().describe("Maximum number of results (default: 50)"),
+    role: tool.schema.enum(["user", "assistant"]).optional().describe("Filter by message role: 'user' for your messages only, 'assistant' for AI responses only")
   },
   async execute(args) {
     const projectID = await getCurrentProjectID();
     let matches = args.mode === "fuzzy" ? await searchFuzzy(projectID, args.query, {
       threshold: args.fuzzyThreshold,
-      limit: args.limit
+      limit: args.limit,
+      role: args.role
     }) : await searchKeyword(projectID, args.query, {
       regex: args.regex,
       caseSensitive: args.caseSensitive,
-      limit: args.limit
+      limit: args.limit,
+      role: args.role
     });
     if (args.date) {
       const dateRange = parseDateFilter(args.date);

@@ -1,5 +1,5 @@
-import type { Session, Message, Part } from "../storage";
-import { listSessions, listMessages, listParts } from "../storage";
+import type { Session, Message, Part } from "../storage-provider";
+import { listSessions, listMessages, listParts } from "../storage-provider";
 
 export interface SearchMatch {
   sessionID: string;
@@ -19,6 +19,7 @@ export async function searchKeyword(
     regex?: boolean;
     caseSensitive?: boolean;
     limit?: number;
+    role?: "user" | "assistant";
   } = {},
 ): Promise<SearchMatch[]> {
   const results: SearchMatch[] = [];
@@ -46,7 +47,7 @@ export async function searchKeyword(
       if (results.length >= limit) break;
     }
 
-    for await (const message of listMessages(session.id)) {
+    for await (const message of listMessages(session.id, options.role)) {
       if (results.length >= limit) break;
 
       for await (const part of listParts(message.id)) {
@@ -109,6 +110,25 @@ export async function searchKeyword(
                 partID: part.id,
               });
               if (results.length >= limit) break;
+            }
+          }
+        }
+
+        // Search patch parts for file paths
+        if (results.length < limit && part.type === "patch" && part.files) {
+          for (const filePath of part.files) {
+            if (results.length >= limit) break;
+            if (pattern.test(filePath)) {
+              results.push({
+                sessionID: session.id,
+                sessionTitle: session.title,
+                timestamp: message.time.created,
+                matchType: "filepath",
+                excerpt: filePath,
+                context: `Modified file: ${filePath}`,
+                messageID: message.id,
+                partID: part.id,
+              });
             }
           }
         }
